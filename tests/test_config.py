@@ -1,8 +1,5 @@
 """Tests for configuration module."""
 
-import os
-import pytest
-
 from echoscribe.config import Config, SlackConfig, OpenAIConfig, AudioConfig
 
 

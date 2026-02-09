@@ -1,7 +1,7 @@
 """Tests for summarization service."""
 
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from echoscribe.services.summarization import SummarizationService, MeetingSummary
 

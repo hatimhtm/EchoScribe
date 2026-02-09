@@ -63,8 +63,6 @@ class SlackService:
         logger.info(f"Posting message to {channel}")
 
         try:
-            from slack_sdk.errors import SlackApiError
-
             kwargs = {
                 "channel": channel,
                 "text": text,
