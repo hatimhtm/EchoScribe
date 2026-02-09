@@ -8,6 +8,10 @@
 
 EchoScribe records meetings, transcribes audio using Google Cloud Speech-to-Text, summarizes content with OpenAI, and posts structured summaries to Slack.
 
+<p align="center">
+  <img src="docs/demo.png" alt="EchoScribe Demo" width="600" />
+</p>
+
 ## ✨ Features
 
 - **Audio Recording** - Capture meeting audio with configurable quality
