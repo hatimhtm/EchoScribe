@@ -60,7 +60,6 @@ class AudioRecorder:
         """
         try:
             import sounddevice as sd
-            import numpy as np
         except ImportError:
             raise ImportError(
                 "sounddevice is required. Install with: pip install sounddevice"

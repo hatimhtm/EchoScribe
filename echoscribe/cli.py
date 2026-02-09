@@ -1,7 +1,6 @@
 """EchoScribe CLI - Meeting transcription and summarization tool."""
 
 import logging
-import sys
 from pathlib import Path
 from typing import Optional
 
@@ -11,7 +10,6 @@ from echoscribe.config import Config
 from echoscribe.services.transcription import TranscriptionService
 from echoscribe.services.summarization import SummarizationService
 from echoscribe.services.slack import SlackService
-from echoscribe.services.recorder import AudioRecorder
 
 app = typer.Typer(
     name="echoscribe",
@@ -173,7 +171,7 @@ def process(
         summary = summarizer.summarize(result.text)
         formatted = summarizer.format_for_slack(summary)
 
-        typer.echo(f"  ✓ Summary complete")
+        typer.echo("  ✓ Summary complete")
         typer.echo(f"\n{formatted}")
 
         # Step 3: Post to Slack
