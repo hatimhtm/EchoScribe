@@ -15,9 +15,10 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SlackConfig:
     """Slack API configuration."""
+
     api_token: str = ""
     channel: str = "#meeting_recordings"
-    
+
     @classmethod
     def from_env(cls) -> "SlackConfig":
         """Create config from environment variables."""
@@ -30,10 +31,11 @@ class SlackConfig:
 @dataclass
 class OpenAIConfig:
     """OpenAI API configuration."""
+
     api_key: str = ""
     model: str = "gpt-3.5-turbo"
     max_tokens: int = 500
-    
+
     @classmethod
     def from_env(cls) -> "OpenAIConfig":
         """Create config from environment variables."""
@@ -47,11 +49,12 @@ class OpenAIConfig:
 @dataclass
 class AudioConfig:
     """Audio recording configuration."""
+
     sample_rate: int = 44100
     channels: int = 2
     chunk_length_ms: int = 60000
     output_format: str = "wav"
-    
+
     @classmethod
     def from_env(cls) -> "AudioConfig":
         """Create config from environment variables."""
@@ -65,21 +68,22 @@ class AudioConfig:
 @dataclass
 class Config:
     """Main configuration container.
-    
+
     Example usage:
         config = Config.from_env()
         print(config.slack.channel)
     """
+
     slack: SlackConfig = field(default_factory=SlackConfig)
     openai: OpenAIConfig = field(default_factory=OpenAIConfig)
     audio: AudioConfig = field(default_factory=AudioConfig)
     debug: bool = False
     log_level: str = "INFO"
-    
+
     @classmethod
     def from_env(cls) -> "Config":
         """Create complete config from environment variables.
-        
+
         Environment variables:
             SLACK_API_TOKEN: Slack Bot token
             SLACK_CHANNEL: Channel to post summaries (default: #meeting_recordings)
@@ -96,20 +100,20 @@ class Config:
             debug=os.getenv("DEBUG", "false").lower() == "true",
             log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
         )
-    
+
     def validate(self) -> list[str]:
         """Validate configuration and return list of errors."""
         errors = []
-        
+
         if not self.slack.api_token:
             errors.append("SLACK_API_TOKEN is required")
         if not self.openai.api_key:
             errors.append("OPENAI_API_KEY is required")
         if not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
             errors.append("GOOGLE_APPLICATION_CREDENTIALS is required")
-            
+
         return errors
-    
+
     def setup_logging(self) -> None:
         """Configure logging based on config."""
         logging.basicConfig(

@@ -15,6 +15,6 @@ from echoscribe.services.slack import SlackService
 __all__ = [
     "Config",
     "TranscriptionService",
-    "SummarizationService", 
+    "SummarizationService",
     "SlackService",
 ]
