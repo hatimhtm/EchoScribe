@@ -1,52 +1,160 @@
 # EchoScribe
-This Python script automates meeting documentation. It records and transcribes meetings, summarizes key points, and posts the summary to a Slack channel. It's a handy tool for capturing and accessing important meeting details.
 
-GitHub Copilot: Sure, here's a detailed README for your project:
+[![Tests](https://github.com/hatimhtm/EchoScribe/actions/workflows/tests.yml/badge.svg)](https://github.com/hatimhtm/EchoScribe/actions/workflows/tests.yml)
+[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://python.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
----
+> 🎙️ Automated meeting transcription and summarization tool
 
-# Automated Meeting Transcription and Summary
+EchoScribe records meetings, transcribes audio using Google Cloud Speech-to-Text, summarizes content with OpenAI, and posts structured summaries to Slack.
 
-This Python script automates the process of recording, transcribing, and summarizing meetings. It uses the Slack API to detect the start and end of a meeting, records the audio, transcribes the audio into text, and summarizes the key points. The summary is then posted to a designated Slack channel.
+## ✨ Features
 
-## Features
+- **Audio Recording** - Capture meeting audio with configurable quality
+- **Transcription** - Convert speech to text using Google Cloud Speech-to-Text
+- **AI Summarization** - Extract summaries, action items, and key points using GPT
+- **Slack Integration** - Post formatted meeting notes to any channel
+- **CLI Interface** - Easy-to-use command-line tool
+- **Docker Support** - Run anywhere with containerization
 
-- **Meeting Detection**: Uses the Slack API to detect when a meeting starts and ends.
-- **Audio Recording**: Records the audio of the meeting.
-- **Transcription**: Transcribes the audio into text using the Google Speech-to-Text API.
-- **Summary**: Summarizes the transcription and extracts tasks and notes using the OpenAI GPT-3 model.
-- **Posting to Slack**: Posts the summary to a Slack channel.
+## 🚀 Quick Start
 
-## Installation
-
-1. Clone this repository.
-2. Install the required Python packages using pip:
-
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-3. Set up the Google Cloud SDK and authenticate with Google Cloud.
-4. Set up a Slack app and install it in your workspace.
-5. Set the following environment variables:
-
-    - `SLACK_API_TOKEN`: Your Slack API token.
-    - `GOOGLE_APPLICATION_CREDENTIALS`: The path to your Google Cloud service account key file.
-
-## Usage
-
-Run the script with Python:
+### Installation
 
 ```bash
-python main.py
+# Clone the repository
+git clone https://github.com/hatimhtm/EchoScribe.git
+cd EchoScribe
+
+# Install with pip
+pip install -e .
+
+# Or with Docker
+docker build -t echoscribe .
 ```
 
-The script will start monitoring for meetings. When a meeting starts, it will start recording the audio. When the meeting ends, it will transcribe the audio, summarize the transcription, and post the summary to the Slack channel.
+### Configuration
 
-## Contributing
+Set these environment variables (or use a `.env` file):
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+```bash
+# Required
+export SLACK_API_TOKEN="xoxb-your-slack-bot-token"
+export OPENAI_API_KEY="sk-your-openai-api-key"
+export GOOGLE_APPLICATION_CREDENTIALS="/path/to/credentials.json"
 
----
+# Optional
+export SLACK_CHANNEL="#meeting_recordings"
+export OPENAI_MODEL="gpt-3.5-turbo"
+export LOG_LEVEL="INFO"
+```
 
-Remember to replace any placeholders with your actual information. Also, you might want to add more sections to your README, such as a section for the license, a section for the code of conduct, a section for how to report bugs, and so on.
+### Usage
+
+```bash
+# Check configuration
+echoscribe check-config
+
+# Transcribe an audio file
+echoscribe transcribe recording.wav -o transcript.txt
+
+# Summarize a transcription
+echoscribe summarize transcript.txt --slack
+
+# Full pipeline: transcribe + summarize + post to Slack
+echoscribe process recording.wav --channel "#team-meetings"
+```
+
+## 📁 Project Structure
+
+```
+echoscribe/
+├── __init__.py           # Package exports
+├── config.py             # Configuration management
+├── cli.py                # Typer CLI commands
+├── services/
+│   ├── transcription.py  # Google Cloud Speech-to-Text
+│   ├── summarization.py  # OpenAI summarization
+│   ├── slack.py          # Slack integration
+│   └── recorder.py       # Audio recording
+└── utils/
+    └── __init__.py
+
+tests/
+├── test_config.py        # Configuration tests
+└── test_summarization.py # Summarization tests
+```
+
+## 🔧 Development
+
+```bash
+# Install dev dependencies
+pip install -e ".[dev]"
+
+# Run tests
+pytest
+
+# Run with coverage
+pytest --cov=echoscribe
+
+# Format code
+black echoscribe tests
+ruff check echoscribe tests
+```
+
+## 🐳 Docker
+
+```bash
+# Build image
+docker build -t echoscribe .
+
+# Run with environment variables
+docker run --rm \
+  -e SLACK_API_TOKEN="xoxb-..." \
+  -e OPENAI_API_KEY="sk-..." \
+  -e GOOGLE_APPLICATION_CREDENTIALS="/creds/key.json" \
+  -v /path/to/creds:/creds:ro \
+  -v /path/to/audio:/audio:ro \
+  echoscribe process /audio/meeting.wav
+```
+
+## 📋 API Reference
+
+### SummarizationService
+
+```python
+from echoscribe.services.summarization import SummarizationService
+
+service = SummarizationService(api_key="sk-...")
+summary = service.summarize("Meeting transcription text...")
+
+print(summary.summary)        # Brief summary
+print(summary.action_items)   # List of action items
+print(summary.key_points)     # Key discussion points
+```
+
+### TranscriptionService
+
+```python
+from echoscribe.services.transcription import TranscriptionService
+
+service = TranscriptionService(language_code="en-US")
+result = service.transcribe("meeting.wav")
+
+print(result.text)        # Transcribed text
+print(result.confidence)  # Confidence score
+```
+
+### SlackService
+
+```python
+from echoscribe.services.slack import SlackService
+
+slack = SlackService(token="xoxb-...")
+slack.post_message("Hello, team!", channel="#general")
+slack.upload_file("report.pdf", title="Meeting Report")
+```
+
+## 📄 License
+
+[MIT](LICENSE)

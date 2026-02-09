@@ -1,6 +1,0 @@
-slack_sdk==3.11.2
-sounddevice==0.4.2
-numpy==1.21.2
-pydub==0.25.1
-google-cloud-speech==2.9.0
-openai==0.27.0
