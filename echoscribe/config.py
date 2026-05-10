@@ -33,7 +33,7 @@ class OpenAIConfig:
     temperature: float = 0.2
 
     @classmethod
-    def from_env(cls) -> "OpenAIConfig":
+    def from_env(cls) -> OpenAIConfig:
         return cls(
             api_key=os.getenv("OPENAI_API_KEY", ""),
             model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
@@ -50,7 +50,7 @@ class SlackConfig:
     channel: str = "#meetings"
 
     @classmethod
-    def from_env(cls) -> "SlackConfig":
+    def from_env(cls) -> SlackConfig:
         return cls(
             api_token=os.getenv("SLACK_API_TOKEN", ""),
             channel=os.getenv("SLACK_CHANNEL", "#meetings"),
@@ -72,7 +72,7 @@ class Config:
     log_level: str = "INFO"
 
     @classmethod
-    def from_env(cls) -> "Config":
+    def from_env(cls) -> Config:
         _load_dotenv_if_present()
         return cls(
             openai=OpenAIConfig.from_env(),

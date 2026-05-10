@@ -77,6 +77,20 @@ target-version = "py310"
 select = ["E", "F", "I", "B", "UP", "W"]
 ignore = ["E501"]  # handled by formatter
 
+# Typer + FastAPI's whole API is built on function-call defaults. Treat those
+# specific calls as immutable so B008 doesn't fight the framework idiom.
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = [
+    "typer.Argument",
+    "typer.Option",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Query",
+    "fastapi.Body",
+    "fastapi.Header",
+    "fastapi.Path",
+]
+
 [tool.black]
 line-length = 100
 target-version = ["py310"]
