@@ -1,104 +1,72 @@
-"""Tests for configuration module."""
+"""Tests for the config module."""
 
-from echoscribe.config import Config, SlackConfig, OpenAIConfig, AudioConfig
-
-
-class TestSlackConfig:
-    """Tests for SlackConfig."""
-
-    def test_default_values(self):
-        """Test default configuration values."""
-        config = SlackConfig()
-
-        assert config.api_token == ""
-        assert config.channel == "#meeting_recordings"
-
-    def test_from_env(self, monkeypatch):
-        """Test loading from environment variables."""
-        monkeypatch.setenv("SLACK_API_TOKEN", "xoxb-test-token")
-        monkeypatch.setenv("SLACK_CHANNEL", "#custom-channel")
-
-        config = SlackConfig.from_env()
-
-        assert config.api_token == "xoxb-test-token"
-        assert config.channel == "#custom-channel"
+from echoscribe.config import Config, OpenAIConfig, SlackConfig
 
 
 class TestOpenAIConfig:
-    """Tests for OpenAIConfig."""
-
-    def test_default_values(self):
-        """Test default configuration values."""
-        config = OpenAIConfig()
-
-        assert config.api_key == ""
-        assert config.model == "gpt-3.5-turbo"
-        assert config.max_tokens == 500
+    def test_defaults(self):
+        cfg = OpenAIConfig()
+        assert cfg.api_key == ""
+        assert cfg.model == "gpt-4o-mini"
+        assert cfg.whisper_model == "whisper-1"
+        assert cfg.temperature == 0.2
 
     def test_from_env(self, monkeypatch):
-        """Test loading from environment variables."""
-        monkeypatch.setenv("OPENAI_API_KEY", "sk-test-key")
-        monkeypatch.setenv("OPENAI_MODEL", "gpt-4")
-        monkeypatch.setenv("OPENAI_MAX_TOKENS", "1000")
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+        monkeypatch.setenv("OPENAI_MODEL", "gpt-4o")
+        monkeypatch.setenv("OPENAI_WHISPER_MODEL", "whisper-1")
+        monkeypatch.setenv("OPENAI_TEMPERATURE", "0.5")
 
-        config = OpenAIConfig.from_env()
+        cfg = OpenAIConfig.from_env()
+        assert cfg.api_key == "sk-test"
+        assert cfg.model == "gpt-4o"
+        assert cfg.temperature == 0.5
 
-        assert config.api_key == "sk-test-key"
-        assert config.model == "gpt-4"
-        assert config.max_tokens == 1000
 
+class TestSlackConfig:
+    def test_defaults(self):
+        cfg = SlackConfig()
+        assert cfg.api_token == ""
+        assert cfg.channel == "#meetings"
 
-class TestAudioConfig:
-    """Tests for AudioConfig."""
+    def test_from_env(self, monkeypatch):
+        monkeypatch.setenv("SLACK_API_TOKEN", "xoxb-test")
+        monkeypatch.setenv("SLACK_CHANNEL", "#standup")
 
-    def test_default_values(self):
-        """Test default configuration values."""
-        config = AudioConfig()
-
-        assert config.sample_rate == 44100
-        assert config.channels == 2
-        assert config.chunk_length_ms == 60000
+        cfg = SlackConfig.from_env()
+        assert cfg.api_token == "xoxb-test"
+        assert cfg.channel == "#standup"
 
 
 class TestConfig:
-    """Tests for main Config class."""
+    def test_from_env_composes(self, monkeypatch):
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+        monkeypatch.setenv("SLACK_API_TOKEN", "xoxb-test")
+        monkeypatch.setenv("LOG_LEVEL", "debug")
 
-    def test_from_env(self, monkeypatch):
-        """Test loading complete config from environment."""
-        monkeypatch.setenv("SLACK_API_TOKEN", "test-slack")
-        monkeypatch.setenv("OPENAI_API_KEY", "test-openai")
-        monkeypatch.setenv("DEBUG", "true")
-        monkeypatch.setenv("LOG_LEVEL", "DEBUG")
+        cfg = Config.from_env()
+        assert cfg.openai.api_key == "sk-test"
+        assert cfg.slack.api_token == "xoxb-test"
+        assert cfg.log_level == "DEBUG"
 
-        config = Config.from_env()
-
-        assert config.slack.api_token == "test-slack"
-        assert config.openai.api_key == "test-openai"
-        assert config.debug is True
-        assert config.log_level == "DEBUG"
-
-    def test_validate_missing_all(self, monkeypatch):
-        """Test validation with missing required config."""
-        # Clear environment
-        monkeypatch.delenv("SLACK_API_TOKEN", raising=False)
+    def test_required_errors_openai_missing(self, monkeypatch):
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
+        cfg = Config.from_env()
+        errs = cfg.required_errors()
+        assert len(errs) == 1
+        assert "OPENAI_API_KEY" in errs[0]
 
-        config = Config.from_env()
-        errors = config.validate()
+    def test_required_errors_slack_only_when_requested(self, monkeypatch):
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+        monkeypatch.delenv("SLACK_API_TOKEN", raising=False)
 
-        assert len(errors) == 3
-        assert "SLACK_API_TOKEN" in errors[0]
-        assert "OPENAI_API_KEY" in errors[1]
-        assert "GOOGLE_APPLICATION_CREDENTIALS" in errors[2]
+        cfg = Config.from_env()
+        assert cfg.required_errors() == []  # slack not asked for
+        assert any("SLACK_API_TOKEN" in e for e in cfg.required_errors(need_slack=True))
 
-    def test_validate_all_present(self, monkeypatch):
-        """Test validation with all required config present."""
-        monkeypatch.setenv("SLACK_API_TOKEN", "token")
-        monkeypatch.setenv("OPENAI_API_KEY", "key")
-        monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "/path/to/creds.json")
+    def test_required_errors_all_set(self, monkeypatch):
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+        monkeypatch.setenv("SLACK_API_TOKEN", "xoxb-test")
 
-        config = Config.from_env()
-        errors = config.validate()
-
-        assert len(errors) == 0
+        cfg = Config.from_env()
+        assert cfg.required_errors(need_slack=True) == []

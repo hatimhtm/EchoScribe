@@ -1,20 +1,33 @@
-"""EchoScribe - Automated Meeting Transcription and Summarization
+"""EchoScribe — audio → Whisper → structured meeting intelligence.
 
-A Python tool that records meetings, transcribes audio using Google Cloud Speech-to-Text,
-summarizes content using OpenAI, and posts results to Slack.
+One OpenAI key gets you transcription (Whisper) and structured extraction
+(GPT) of summary, decisions, action items, participants, sentiment, and
+open questions. Output to Slack, Markdown, or JSON. Use as a CLI, a
+FastAPI server, or a directory watcher.
 """
 
-__version__ = "2.0.0"
+__version__ = "3.0.0"
 __author__ = "Hatim El Hassak"
 
-from echoscribe.config import Config
-from echoscribe.services.transcription import TranscriptionService
-from echoscribe.services.summarization import SummarizationService
+from echoscribe.config import Config, OpenAIConfig, SlackConfig
+from echoscribe.services.intelligence import (
+    ActionItem,
+    Decision,
+    IntelligenceService,
+    MeetingIntelligence,
+)
 from echoscribe.services.slack import SlackService
+from echoscribe.services.transcription import TranscriptionResult, TranscriptionService
 
 __all__ = [
+    "ActionItem",
     "Config",
-    "TranscriptionService",
-    "SummarizationService",
+    "Decision",
+    "IntelligenceService",
+    "MeetingIntelligence",
+    "OpenAIConfig",
+    "SlackConfig",
     "SlackService",
+    "TranscriptionResult",
+    "TranscriptionService",
 ]

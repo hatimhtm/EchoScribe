@@ -1,237 +1,287 @@
-"""EchoScribe CLI - Meeting transcription and summarization tool."""
+"""EchoScribe CLI — audio → structured meeting intelligence → your tool of choice."""
+
+from __future__ import annotations
 
 import logging
+import sys
 from pathlib import Path
 from typing import Optional
 
 import typer
 
+from echoscribe import __version__
 from echoscribe.config import Config
-from echoscribe.services.transcription import TranscriptionService
-from echoscribe.services.summarization import SummarizationService
+from echoscribe.output import to_json, to_markdown, to_slack
+from echoscribe.services.intelligence import IntelligenceService
 from echoscribe.services.slack import SlackService
+from echoscribe.services.transcription import TranscriptionService
 
 app = typer.Typer(
     name="echoscribe",
-    help="📝 Meeting transcription and summarization tool",
+    help="Audio → Whisper → structured meeting intelligence → your tool of choice.",
     add_completion=False,
+    no_args_is_help=True,
 )
 
 logger = logging.getLogger(__name__)
 
 
-def setup_logging(debug: bool = False) -> None:
-    """Configure logging."""
-    level = logging.DEBUG if debug else logging.INFO
+def _setup_logging(debug: bool) -> None:
     logging.basicConfig(
-        level=level,
-        format="%(asctime)s - %(levelname)s - %(message)s",
+        level=logging.DEBUG if debug else logging.INFO,
+        format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
         datefmt="%H:%M:%S",
     )
 
 
+def _die(message: str, code: int = 1) -> None:
+    typer.secho(f"✗ {message}", fg=typer.colors.RED, err=True)
+    raise typer.Exit(code)
+
+
+def _render(meeting, fmt: str) -> str:
+    if fmt == "markdown":
+        return to_markdown(meeting)
+    if fmt == "slack":
+        return to_slack(meeting)
+    if fmt == "json":
+        return to_json(meeting)
+    _die(f"unknown format: {fmt} (expected one of: markdown, slack, json)")
+    return ""  # unreachable
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Commands
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 @app.command()
 def transcribe(
-    audio_file: Path = typer.Argument(..., help="Path to audio file to transcribe"),
-    output: Optional[Path] = typer.Option(
-        None, "--output", "-o", help="Output file for transcription"
+    audio: Path = typer.Argument(..., exists=True, file_okay=True, dir_okay=False, readable=True),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Write transcript to file."),
+    language: Optional[str] = typer.Option(
+        None, "--language", "-l", help="BCP-47 language hint (auto-detect if omitted)."
     ),
-    language: str = typer.Option(
-        "en-US", "--language", "-l", help="Language code (BCP-47)"
-    ),
-    debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
+    debug: bool = typer.Option(False, "--debug", help="Verbose logging."),
 ) -> None:
-    """Transcribe an audio file to text."""
-    setup_logging(debug)
+    """Transcribe an audio file via Whisper."""
+    _setup_logging(debug)
+    cfg = Config.from_env()
+    if errors := cfg.required_errors():
+        for e in errors:
+            _die(e)
 
-    if not audio_file.exists():
-        typer.echo(f"Error: File not found: {audio_file}", err=True)
-        raise typer.Exit(1)
+    service = TranscriptionService(
+        api_key=cfg.openai.api_key,
+        model=cfg.openai.whisper_model,
+        language=language,
+    )
+    result = service.transcribe(audio)
+    if not result.text:
+        _die("Whisper returned no text.")
 
-    typer.echo(f"🎙️ Transcribing: {audio_file}")
-
-    try:
-        service = TranscriptionService(language_code=language)
-        result = service.transcribe(audio_file)
-
-        if result and result.text:
-            typer.echo(f"\n📝 Transcription ({result.confidence:.0%} confidence):\n")
-            typer.echo(result.text)
-
-            if output:
-                output.write_text(result.text)
-                typer.echo(f"\n✅ Saved to: {output}")
-        else:
-            typer.echo("No transcription available", err=True)
-            raise typer.Exit(1)
-
-    except Exception as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+    typer.echo(result.text)
+    if output:
+        output.write_text(result.text)
+        typer.secho(f"✓ wrote {output} ({result.word_count} words)", fg=typer.colors.GREEN, err=True)
 
 
 @app.command()
-def summarize(
-    transcription_file: Path = typer.Argument(
-        ..., help="Path to transcription text file"
-    ),
-    post_slack: bool = typer.Option(
-        False, "--slack", "-s", help="Post summary to Slack"
-    ),
-    channel: Optional[str] = typer.Option(
-        None, "--channel", "-c", help="Slack channel to post to"
-    ),
-    debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
+def intelligence(
+    transcript: Path = typer.Argument(..., exists=True, file_okay=True, dir_okay=False, readable=True),
+    format: str = typer.Option("markdown", "--format", "-f", help="markdown · slack · json"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o"),
+    post_slack: bool = typer.Option(False, "--slack", help="Also post to Slack."),
+    channel: Optional[str] = typer.Option(None, "--channel", "-c"),
+    debug: bool = typer.Option(False, "--debug"),
 ) -> None:
-    """Summarize a meeting transcription."""
-    setup_logging(debug)
+    """Run structured meeting-intelligence extraction on a transcript text file."""
+    _setup_logging(debug)
+    cfg = Config.from_env()
+    if errors := cfg.required_errors(need_slack=post_slack):
+        for e in errors:
+            _die(e)
 
-    config = Config.from_env()
+    service = IntelligenceService(api_key=cfg.openai.api_key, model=cfg.openai.model)
+    meeting = service.extract(transcript.read_text())
 
-    if not config.openai.api_key:
-        typer.echo("Error: OPENAI_API_KEY environment variable required", err=True)
-        raise typer.Exit(1)
+    rendered = _render(meeting, format)
+    typer.echo(rendered)
+    if output:
+        output.write_text(rendered)
+        typer.secho(f"✓ wrote {output}", fg=typer.colors.GREEN, err=True)
 
-    if not transcription_file.exists():
-        typer.echo(f"Error: File not found: {transcription_file}", err=True)
-        raise typer.Exit(1)
-
-    typer.echo(f"📊 Summarizing: {transcription_file}")
-
-    try:
-        transcription = transcription_file.read_text()
-
-        summarizer = SummarizationService(
-            api_key=config.openai.api_key,
-            model=config.openai.model,
-        )
-
-        summary = summarizer.summarize(transcription)
-        formatted = summarizer.format_for_slack(summary)
-
-        typer.echo(f"\n{formatted}")
-
-        if post_slack:
-            if not config.slack.api_token:
-                typer.echo("Error: SLACK_API_TOKEN required for --slack", err=True)
-                raise typer.Exit(1)
-
-            slack = SlackService(
-                token=config.slack.api_token,
-                default_channel=channel or config.slack.channel,
-            )
-            slack.post_meeting_summary(formatted)
-            typer.echo(f"\n✅ Posted to Slack: {channel or config.slack.channel}")
-
-    except Exception as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+    if post_slack:
+        slack = SlackService(token=cfg.slack.api_token, default_channel=channel or cfg.slack.channel)
+        slack.post_message(to_slack(meeting))
+        typer.secho(f"✓ posted to {channel or cfg.slack.channel}", fg=typer.colors.GREEN, err=True)
 
 
 @app.command()
 def process(
-    audio_file: Path = typer.Argument(..., help="Path to audio file"),
-    post_slack: bool = typer.Option(True, "--slack/--no-slack", help="Post to Slack"),
-    channel: Optional[str] = typer.Option(
-        None, "--channel", "-c", help="Slack channel"
+    audio: Path = typer.Argument(..., exists=True, file_okay=True, dir_okay=False, readable=True),
+    format: str = typer.Option("markdown", "--format", "-f"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o"),
+    save_transcript: Optional[Path] = typer.Option(
+        None, "--save-transcript", help="Also write the raw transcript to this path."
     ),
-    debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
+    post_slack: bool = typer.Option(False, "--slack"),
+    channel: Optional[str] = typer.Option(None, "--channel", "-c"),
+    language: Optional[str] = typer.Option(None, "--language", "-l"),
+    debug: bool = typer.Option(False, "--debug"),
 ) -> None:
-    """Full pipeline: transcribe audio and summarize."""
-    setup_logging(debug)
+    """Full pipeline: audio → transcript → structured meeting brief."""
+    _setup_logging(debug)
+    cfg = Config.from_env()
+    if errors := cfg.required_errors(need_slack=post_slack):
+        for e in errors:
+            _die(e)
 
-    config = Config.from_env()
-    errors = config.validate()
+    transcriber = TranscriptionService(
+        api_key=cfg.openai.api_key,
+        model=cfg.openai.whisper_model,
+        language=language,
+    )
+    typer.secho(f"→ transcribing {audio.name}…", err=True)
+    transcript_result = transcriber.transcribe(audio)
+    if not transcript_result.text:
+        _die("Whisper returned no text.")
+    typer.secho(
+        f"  ✓ {transcript_result.word_count} words, {transcript_result.duration_seconds:.1f}s",
+        fg=typer.colors.GREEN,
+        err=True,
+    )
 
-    if errors:
-        for error in errors:
-            typer.echo(f"Config error: {error}", err=True)
-        raise typer.Exit(1)
+    if save_transcript:
+        save_transcript.write_text(transcript_result.text)
 
-    typer.echo(f"🎙️ Processing: {audio_file}")
+    typer.secho("→ extracting intelligence…", err=True)
+    intel = IntelligenceService(api_key=cfg.openai.api_key, model=cfg.openai.model)
+    meeting = intel.extract(transcript_result.text)
+    typer.secho(
+        f"  ✓ {len(meeting.action_items)} actions, "
+        f"{len(meeting.decisions)} decisions, "
+        f"{len(meeting.key_points)} key points",
+        fg=typer.colors.GREEN,
+        err=True,
+    )
 
-    try:
-        # Step 1: Transcribe
-        typer.echo("  → Transcribing audio...")
-        transcriber = TranscriptionService()
-        result = transcriber.transcribe(audio_file)
+    rendered = _render(meeting, format)
+    typer.echo(rendered)
+    if output:
+        output.write_text(rendered)
+        typer.secho(f"  ✓ wrote {output}", fg=typer.colors.GREEN, err=True)
 
-        if not result or not result.text:
-            typer.echo("Error: No transcription available", err=True)
-            raise typer.Exit(1)
+    if post_slack:
+        slack = SlackService(token=cfg.slack.api_token, default_channel=channel or cfg.slack.channel)
+        slack.post_message(to_slack(meeting))
+        typer.secho(f"  ✓ posted to {channel or cfg.slack.channel}", fg=typer.colors.GREEN, err=True)
 
-        typer.echo(f"  ✓ Transcription complete ({len(result.text)} chars)")
 
-        # Step 2: Summarize
-        typer.echo("  → Summarizing...")
-        summarizer = SummarizationService(
-            api_key=config.openai.api_key,
-            model=config.openai.model,
+@app.command()
+def serve(
+    host: str = typer.Option("0.0.0.0", "--host"),
+    port: int = typer.Option(8000, "--port", "-p"),
+) -> None:
+    """Start the FastAPI server (requires `pip install 'echoscribe[server]'`)."""
+    _setup_logging(False)
+    cfg = Config.from_env()
+    if not cfg.openai.api_key:
+        typer.secho(
+            "⚠ OPENAI_API_KEY is not set — the server will start but /v1/* will return 500.",
+            fg=typer.colors.YELLOW,
+            err=True,
         )
-        summary = summarizer.summarize(result.text)
-        formatted = summarizer.format_for_slack(summary)
+    from echoscribe.server import run as run_server
 
-        typer.echo("  ✓ Summary complete")
-        typer.echo(f"\n{formatted}")
+    run_server(host=host, port=port)
 
-        # Step 3: Post to Slack
+
+@app.command()
+def watch(
+    directory: Path = typer.Argument(..., help="Directory to watch for new audio files."),
+    format: str = typer.Option("markdown", "--format", "-f"),
+    post_slack: bool = typer.Option(False, "--slack"),
+    channel: Optional[str] = typer.Option(None, "--channel", "-c"),
+    debug: bool = typer.Option(False, "--debug"),
+) -> None:
+    """Watch a directory and process every new audio file that lands in it.
+
+    The structured brief is written next to the source file:
+    `meeting.mp3` → `meeting.brief.md` (or `.slack.txt` / `.json`).
+    """
+    _setup_logging(debug)
+    cfg = Config.from_env()
+    if errors := cfg.required_errors(need_slack=post_slack):
+        for e in errors:
+            _die(e)
+
+    from echoscribe.watch import watch_directory
+
+    suffix = {"markdown": ".brief.md", "slack": ".slack.txt", "json": ".brief.json"}[format]
+
+    def handle(audio_path: Path) -> None:
+        transcriber = TranscriptionService(
+            api_key=cfg.openai.api_key, model=cfg.openai.whisper_model
+        )
+        transcript = transcriber.transcribe(audio_path).text
+        meeting = IntelligenceService(
+            api_key=cfg.openai.api_key, model=cfg.openai.model
+        ).extract(transcript)
+
+        rendered = _render(meeting, format)
+        out_path = audio_path.with_suffix(audio_path.suffix + suffix)
+        out_path.write_text(rendered)
+        typer.secho(f"  ✓ {audio_path.name} → {out_path.name}", fg=typer.colors.GREEN, err=True)
+
         if post_slack:
-            typer.echo("  → Posting to Slack...")
             slack = SlackService(
-                token=config.slack.api_token,
-                default_channel=channel or config.slack.channel,
+                token=cfg.slack.api_token, default_channel=channel or cfg.slack.channel
             )
-            slack.post_meeting_summary(formatted)
-            typer.echo(f"  ✓ Posted to {channel or config.slack.channel}")
+            slack.post_message(to_slack(meeting))
 
-        typer.echo("\n✅ Done!")
+    typer.secho(f"watching {directory.resolve()} for new audio files…", err=True)
+    watch_directory(directory, handle)
 
-    except Exception as e:
-        typer.echo(f"Error: {e}", err=True)
+
+@app.command(name="check-config")
+def check_config() -> None:
+    """Print which environment variables are set vs missing."""
+    cfg = Config.from_env()
+
+    def row(label: str, ok: bool, hint: str = "") -> None:
+        mark = typer.style("✓", fg=typer.colors.GREEN) if ok else typer.style("✗", fg=typer.colors.RED)
+        status = "set" if ok else "missing"
+        line = f"  {mark} {label}: {status}"
+        if hint:
+            line += f"  ({hint})"
+        typer.echo(line)
+
+    typer.echo("EchoScribe configuration")
+    typer.echo("")
+    row("OPENAI_API_KEY", bool(cfg.openai.api_key), f"model={cfg.openai.model}, whisper={cfg.openai.whisper_model}")
+    row("SLACK_API_TOKEN", bool(cfg.slack.api_token), f"channel={cfg.slack.channel} (optional)")
+    typer.echo("")
+
+    if cfg.openai.api_key:
+        typer.secho("✓ ready", fg=typer.colors.GREEN)
+    else:
+        typer.secho("✗ OPENAI_API_KEY required to run the pipeline", fg=typer.colors.RED)
         raise typer.Exit(1)
 
 
 @app.command()
-def check_config() -> None:
-    """Validate configuration and show status."""
-    config = Config.from_env()
-    errors = config.validate()
-
-    typer.echo("📋 Configuration Status\n")
-
-    # Slack
-    slack_ok = bool(config.slack.api_token)
-    status = "✓" if slack_ok else "✗"
-    typer.echo(f"  {status} SLACK_API_TOKEN: {'set' if slack_ok else 'missing'}")
-    typer.echo(f"    Channel: {config.slack.channel}")
-
-    # OpenAI
-    openai_ok = bool(config.openai.api_key)
-    status = "✓" if openai_ok else "✗"
-    typer.echo(f"  {status} OPENAI_API_KEY: {'set' if openai_ok else 'missing'}")
-    typer.echo(f"    Model: {config.openai.model}")
-
-    # Google Cloud
-    import os
-
-    google_ok = bool(os.getenv("GOOGLE_APPLICATION_CREDENTIALS"))
-    status = "✓" if google_ok else "✗"
-    typer.echo(
-        f"  {status} GOOGLE_APPLICATION_CREDENTIALS: {'set' if google_ok else 'missing'}"
-    )
-
-    typer.echo("")
-
-    if errors:
-        typer.echo("❌ Configuration incomplete")
-        raise typer.Exit(1)
-    else:
-        typer.echo("✅ All required configuration is set")
+def version() -> None:
+    """Print version and exit."""
+    typer.echo(f"echoscribe {__version__}")
 
 
 def main() -> None:
-    """Entry point for CLI."""
-    app()
+    try:
+        app()
+    except KeyboardInterrupt:
+        typer.secho("\n✗ interrupted", fg=typer.colors.YELLOW, err=True)
+        sys.exit(130)
 
 
 if __name__ == "__main__":

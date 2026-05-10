@@ -1,13 +1,13 @@
-"""Services module for EchoScribe."""
+"""Services that talk to external systems (OpenAI, Slack)."""
 
-from echoscribe.services.transcription import TranscriptionService
-from echoscribe.services.summarization import SummarizationService
+from echoscribe.services.intelligence import IntelligenceService, MeetingIntelligence
 from echoscribe.services.slack import SlackService
-from echoscribe.services.recorder import AudioRecorder
+from echoscribe.services.transcription import TranscriptionResult, TranscriptionService
 
 __all__ = [
-    "TranscriptionService",
-    "SummarizationService",
+    "IntelligenceService",
+    "MeetingIntelligence",
     "SlackService",
-    "AudioRecorder",
+    "TranscriptionResult",
+    "TranscriptionService",
 ]

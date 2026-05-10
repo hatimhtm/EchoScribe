@@ -1,122 +1,102 @@
 """Configuration management for EchoScribe.
 
-Loads configuration from environment variables with sensible defaults.
-Use a .env file for local development.
+Loads from environment variables (and a `.env` file if `python-dotenv` is
+installed or a parent process loaded it). The whole pipeline runs on a
+single OpenAI key; Slack is optional.
 """
 
-import os
+from __future__ import annotations
+
 import logging
+import os
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class SlackConfig:
-    """Slack API configuration."""
-
-    api_token: str = ""
-    channel: str = "#meeting_recordings"
-
-    @classmethod
-    def from_env(cls) -> "SlackConfig":
-        """Create config from environment variables."""
-        return cls(
-            api_token=os.getenv("SLACK_API_TOKEN", ""),
-            channel=os.getenv("SLACK_CHANNEL", "#meeting_recordings"),
-        )
+def _load_dotenv_if_present() -> None:
+    """Best-effort load of .env from CWD. Silent no-op if python-dotenv is missing."""
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+    load_dotenv()
 
 
 @dataclass
 class OpenAIConfig:
-    """OpenAI API configuration."""
+    """OpenAI configuration — used for both Whisper (transcription) and GPT (intelligence)."""
 
     api_key: str = ""
-    model: str = "gpt-3.5-turbo"
-    max_tokens: int = 500
+    model: str = "gpt-4o-mini"
+    whisper_model: str = "whisper-1"
+    temperature: float = 0.2
 
     @classmethod
     def from_env(cls) -> "OpenAIConfig":
-        """Create config from environment variables."""
         return cls(
             api_key=os.getenv("OPENAI_API_KEY", ""),
-            model=os.getenv("OPENAI_MODEL", "gpt-3.5-turbo"),
-            max_tokens=int(os.getenv("OPENAI_MAX_TOKENS", "500")),
+            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            whisper_model=os.getenv("OPENAI_WHISPER_MODEL", "whisper-1"),
+            temperature=float(os.getenv("OPENAI_TEMPERATURE", "0.2")),
         )
 
 
 @dataclass
-class AudioConfig:
-    """Audio recording configuration."""
+class SlackConfig:
+    """Slack configuration — optional, only used when posting summaries to Slack."""
 
-    sample_rate: int = 44100
-    channels: int = 2
-    chunk_length_ms: int = 60000
-    output_format: str = "wav"
+    api_token: str = ""
+    channel: str = "#meetings"
 
     @classmethod
-    def from_env(cls) -> "AudioConfig":
-        """Create config from environment variables."""
+    def from_env(cls) -> "SlackConfig":
         return cls(
-            sample_rate=int(os.getenv("AUDIO_SAMPLE_RATE", "44100")),
-            channels=int(os.getenv("AUDIO_CHANNELS", "2")),
-            chunk_length_ms=int(os.getenv("AUDIO_CHUNK_MS", "60000")),
+            api_token=os.getenv("SLACK_API_TOKEN", ""),
+            channel=os.getenv("SLACK_CHANNEL", "#meetings"),
         )
 
 
 @dataclass
 class Config:
-    """Main configuration container.
+    """Top-level config container.
 
-    Example usage:
+    Example:
         config = Config.from_env()
-        print(config.slack.channel)
+        if not config.openai.api_key:
+            raise SystemExit("OPENAI_API_KEY required")
     """
 
-    slack: SlackConfig = field(default_factory=SlackConfig)
     openai: OpenAIConfig = field(default_factory=OpenAIConfig)
-    audio: AudioConfig = field(default_factory=AudioConfig)
-    debug: bool = False
+    slack: SlackConfig = field(default_factory=SlackConfig)
     log_level: str = "INFO"
 
     @classmethod
     def from_env(cls) -> "Config":
-        """Create complete config from environment variables.
-
-        Environment variables:
-            SLACK_API_TOKEN: Slack Bot token
-            SLACK_CHANNEL: Channel to post summaries (default: #meeting_recordings)
-            OPENAI_API_KEY: OpenAI API key
-            OPENAI_MODEL: Model to use (default: gpt-3.5-turbo)
-            GOOGLE_APPLICATION_CREDENTIALS: Path to Google Cloud credentials
-            DEBUG: Enable debug mode (default: false)
-            LOG_LEVEL: Logging level (default: INFO)
-        """
+        _load_dotenv_if_present()
         return cls(
-            slack=SlackConfig.from_env(),
             openai=OpenAIConfig.from_env(),
-            audio=AudioConfig.from_env(),
-            debug=os.getenv("DEBUG", "false").lower() == "true",
+            slack=SlackConfig.from_env(),
             log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
         )
 
-    def validate(self) -> list[str]:
-        """Validate configuration and return list of errors."""
-        errors = []
+    def required_errors(self, *, need_slack: bool = False) -> list[str]:
+        """Return human-readable error messages for missing required config.
 
-        if not self.slack.api_token:
-            errors.append("SLACK_API_TOKEN is required")
+        OpenAI is always required (it's the whole pipeline). Slack is only
+        required when the caller asks for it (`--slack` / server with
+        `post_to_slack=true`).
+        """
+        errors: list[str] = []
         if not self.openai.api_key:
             errors.append("OPENAI_API_KEY is required")
-        if not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
-            errors.append("GOOGLE_APPLICATION_CREDENTIALS is required")
-
+        if need_slack and not self.slack.api_token:
+            errors.append("SLACK_API_TOKEN is required for Slack posting")
         return errors
 
     def setup_logging(self) -> None:
-        """Configure logging based on config."""
         logging.basicConfig(
-            level=getattr(logging, self.log_level),
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
+            level=getattr(logging, self.log_level, logging.INFO),
+            format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
+            datefmt="%H:%M:%S",
         )

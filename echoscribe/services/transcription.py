@@ -1,149 +1,162 @@
-"""Audio transcription service using Google Cloud Speech-to-Text."""
+"""Audio transcription via OpenAI Whisper.
+
+Replaced the Google Cloud Speech-to-Text backend in 3.0 — one API key for the
+whole pipeline (Whisper + GPT) instead of juggling a service-account JSON.
+"""
+
+from __future__ import annotations
 
 import logging
-from pathlib import Path
-from typing import Optional
 from dataclasses import dataclass
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+# Whisper API hard limit per upload (OpenAI: 25 MB).
+WHISPER_MAX_FILE_BYTES = 25 * 1024 * 1024
 
 
 @dataclass
 class TranscriptionResult:
-    """Result from transcription service."""
+    """A transcribed audio file."""
 
     text: str
-    confidence: float
     language: str
     duration_seconds: float
+    model: str
+
+    @property
+    def word_count(self) -> int:
+        return len(self.text.split())
 
 
 class TranscriptionService:
-    """Service for transcribing audio files using Google Cloud Speech-to-Text.
+    """Transcribe audio files with OpenAI Whisper.
 
-    Example:
-        service = TranscriptionService()
-        result = service.transcribe("recording.wav")
-        print(result.text)
+    Whisper accepts mp3, mp4, mpeg, mpga, m4a, wav, webm — encoding-detection
+    is handled server-side, so callers can hand it whatever ffmpeg/Zoom/Teams
+    spit out without converting first.
+
+    Files larger than 25 MB are auto-chunked along silence boundaries (via
+    pydub) before upload, then re-joined.
     """
 
     def __init__(
         self,
-        language_code: str = "en-US",
-        sample_rate_hertz: int = 16000,
+        api_key: str,
+        model: str = "whisper-1",
+        language: str | None = None,
+        prompt: str | None = None,
     ):
-        """Initialize transcription service.
-
-        Args:
-            language_code: BCP-47 language code (default: en-US)
-            sample_rate_hertz: Audio sample rate (default: 16000)
-        """
-        self.language_code = language_code
-        self.sample_rate_hertz = sample_rate_hertz
+        self.api_key = api_key
+        self.model = model
+        self.language = language
+        self.prompt = prompt
         self._client = None
 
     @property
     def client(self):
-        """Lazy-load Google Cloud Speech client."""
         if self._client is None:
-            try:
-                from google.cloud import speech
+            from openai import OpenAI
 
-                self._client = speech.SpeechClient()
-            except ImportError:
-                raise ImportError(
-                    "google-cloud-speech is required. "
-                    "Install with: pip install google-cloud-speech"
-                )
+            self._client = OpenAI(api_key=self.api_key)
         return self._client
 
-    def transcribe(self, audio_path: str | Path) -> Optional[TranscriptionResult]:
-        """Transcribe an audio file.
-
-        Args:
-            audio_path: Path to the audio file (WAV format recommended)
-
-        Returns:
-            TranscriptionResult with text and metadata, or None if failed
-
-        Raises:
-            FileNotFoundError: If audio file doesn't exist
-        """
+    def transcribe(self, audio_path: str | Path) -> TranscriptionResult:
         audio_path = Path(audio_path)
-
         if not audio_path.exists():
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
-        logger.info(f"Transcribing audio file: {audio_path}")
+        size = audio_path.stat().st_size
+        if size <= WHISPER_MAX_FILE_BYTES:
+            return self._transcribe_single(audio_path)
 
+        logger.info(
+            "audio is %.1f MB — exceeds Whisper's 25 MB cap, chunking",
+            size / 1024 / 1024,
+        )
+        return self._transcribe_chunked(audio_path)
+
+    def _transcribe_single(self, audio_path: Path) -> TranscriptionResult:
+        logger.info("transcribing %s via %s", audio_path.name, self.model)
+        with audio_path.open("rb") as f:
+            response = self.client.audio.transcriptions.create(
+                model=self.model,
+                file=f,
+                language=self.language,
+                prompt=self.prompt,
+                response_format="verbose_json",
+            )
+
+        return TranscriptionResult(
+            text=(response.text or "").strip(),
+            language=getattr(response, "language", self.language or "unknown"),
+            duration_seconds=getattr(response, "duration", 0.0) or 0.0,
+            model=self.model,
+        )
+
+    def _transcribe_chunked(self, audio_path: Path) -> TranscriptionResult:
+        """Split audio into <25 MB chunks along silence, transcribe each, join."""
         try:
-            from google.cloud import speech
+            from pydub import AudioSegment
+            from pydub.silence import split_on_silence
+        except ImportError as exc:
+            raise ImportError(
+                "pydub is required for large-file chunking. "
+                "Install with: pip install pydub"
+            ) from exc
 
-            with open(audio_path, "rb") as audio_file:
-                content = audio_file.read()
+        audio = AudioSegment.from_file(audio_path)
 
-            audio = speech.RecognitionAudio(content=content)
-            config = speech.RecognitionConfig(
-                encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
-                sample_rate_hertz=self.sample_rate_hertz,
-                language_code=self.language_code,
-                enable_automatic_punctuation=True,
-            )
+        # Target ~20 MB chunks (leave headroom under the 25 MB cap).
+        target_ms = max(
+            60_000,
+            int(len(audio) * (20 * 1024 * 1024) / max(audio_path.stat().st_size, 1)),
+        )
 
-            response = self.client.recognize(config=config, audio=audio)
+        chunks = split_on_silence(
+            audio,
+            min_silence_len=700,
+            silence_thresh=audio.dBFS - 14,
+            keep_silence=300,
+        )
 
-            if not response.results:
-                logger.warning("No transcription results returned")
-                return None
+        # Re-pack the silence-cut pieces into target-sized segments.
+        packed: list[AudioSegment] = []
+        current = AudioSegment.empty()
+        for piece in chunks:
+            if len(current) + len(piece) > target_ms and len(current) > 0:
+                packed.append(current)
+                current = AudioSegment.empty()
+            current += piece
+        if len(current) > 0:
+            packed.append(current)
 
-            # Combine all results
-            full_text = " ".join(
-                result.alternatives[0].transcript
-                for result in response.results
-                if result.alternatives
-            )
+        # Fall back to a fixed-size split if silence detection produced nothing.
+        if not packed:
+            step = target_ms
+            packed = [audio[i : i + step] for i in range(0, len(audio), step)]
 
-            # Get confidence from first result
-            confidence = (
-                response.results[0].alternatives[0].confidence
-                if response.results and response.results[0].alternatives
-                else 0.0
-            )
+        logger.info("split into %d chunks for upload", len(packed))
 
-            result = TranscriptionResult(
-                text=full_text,
-                confidence=confidence,
-                language=self.language_code,
-                duration_seconds=0.0,  # Could be calculated from audio
-            )
+        parts: list[str] = []
+        total_seconds = 0.0
+        language = self.language or "unknown"
 
-            logger.info(
-                f"Transcription complete: {len(full_text)} chars, {confidence:.2%} confidence"
-            )
-            return result
-
-        except Exception as e:
-            logger.error(f"Transcription failed: {e}")
-            raise
-
-    def transcribe_chunks(self, chunk_paths: list[str | Path]) -> str:
-        """Transcribe multiple audio chunks and combine results.
-
-        Args:
-            chunk_paths: List of paths to audio chunks
-
-        Returns:
-            Combined transcription text
-        """
-        transcriptions = []
-
-        for path in chunk_paths:
+        for i, chunk in enumerate(packed):
+            tmp_path = audio_path.parent / f"{audio_path.stem}.chunk{i}.mp3"
+            chunk.export(tmp_path, format="mp3", bitrate="128k")
             try:
-                result = self.transcribe(path)
-                if result and result.text:
-                    transcriptions.append(result.text)
-            except Exception as e:
-                logger.error(f"Failed to transcribe {path}: {e}")
-                continue
+                result = self._transcribe_single(tmp_path)
+            finally:
+                tmp_path.unlink(missing_ok=True)
+            parts.append(result.text)
+            total_seconds += result.duration_seconds
+            language = result.language
 
-        return " ".join(transcriptions)
+        return TranscriptionResult(
+            text=" ".join(p for p in parts if p),
+            language=language,
+            duration_seconds=total_seconds,
+            model=self.model,
+        )
