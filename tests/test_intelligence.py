@@ -71,9 +71,9 @@ class TestIntelligenceService:
     def test_fallback_handles_bad_json_via_pydantic_validation(self, service):
         service._client.beta.chat.completions.parse.side_effect = AttributeError
         response = MagicMock()
-        response.choices = [MagicMock(message=MagicMock(content=json.dumps(
-            {"title": "T", "summary": "S"}
-        )))]
+        response.choices = [
+            MagicMock(message=MagicMock(content=json.dumps({"title": "T", "summary": "S"})))
+        ]
         service._client.chat.completions.create.return_value = response
 
         result = service.extract("transcript")

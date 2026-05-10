@@ -32,8 +32,7 @@ def create_app(config: Config | None = None):
         from fastapi.responses import JSONResponse, PlainTextResponse
     except ImportError as exc:
         raise ImportError(
-            "FastAPI is required for server mode. "
-            "Install with: pip install 'echoscribe[server]'"
+            "FastAPI is required for server mode. " "Install with: pip install 'echoscribe[server]'"
         ) from exc
 
     cfg = config or Config.from_env()
@@ -136,8 +135,7 @@ def run(host: str = "0.0.0.0", port: int = 8000) -> None:
         import uvicorn
     except ImportError as exc:
         raise ImportError(
-            "uvicorn is required for server mode. "
-            "Install with: pip install 'echoscribe[server]'"
+            "uvicorn is required for server mode. " "Install with: pip install 'echoscribe[server]'"
         ) from exc
 
     uvicorn.run(create_app(), host=host, port=port)

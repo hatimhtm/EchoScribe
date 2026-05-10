@@ -82,12 +82,16 @@ def transcribe(
     typer.echo(result.text)
     if output:
         output.write_text(result.text)
-        typer.secho(f"✓ wrote {output} ({result.word_count} words)", fg=typer.colors.GREEN, err=True)
+        typer.secho(
+            f"✓ wrote {output} ({result.word_count} words)", fg=typer.colors.GREEN, err=True
+        )
 
 
 @app.command()
 def intelligence(
-    transcript: Path = typer.Argument(..., exists=True, file_okay=True, dir_okay=False, readable=True),
+    transcript: Path = typer.Argument(
+        ..., exists=True, file_okay=True, dir_okay=False, readable=True
+    ),
     format: str = typer.Option("markdown", "--format", "-f", help="markdown · slack · json"),
     output: Path | None = typer.Option(None, "--output", "-o"),
     post_slack: bool = typer.Option(False, "--slack", help="Also post to Slack."),
@@ -111,7 +115,9 @@ def intelligence(
         typer.secho(f"✓ wrote {output}", fg=typer.colors.GREEN, err=True)
 
     if post_slack:
-        slack = SlackService(token=cfg.slack.api_token, default_channel=channel or cfg.slack.channel)
+        slack = SlackService(
+            token=cfg.slack.api_token, default_channel=channel or cfg.slack.channel
+        )
         slack.post_message(to_slack(meeting))
         typer.secho(f"✓ posted to {channel or cfg.slack.channel}", fg=typer.colors.GREEN, err=True)
 
@@ -172,9 +178,13 @@ def process(
         typer.secho(f"  ✓ wrote {output}", fg=typer.colors.GREEN, err=True)
 
     if post_slack:
-        slack = SlackService(token=cfg.slack.api_token, default_channel=channel or cfg.slack.channel)
+        slack = SlackService(
+            token=cfg.slack.api_token, default_channel=channel or cfg.slack.channel
+        )
         slack.post_message(to_slack(meeting))
-        typer.secho(f"  ✓ posted to {channel or cfg.slack.channel}", fg=typer.colors.GREEN, err=True)
+        typer.secho(
+            f"  ✓ posted to {channel or cfg.slack.channel}", fg=typer.colors.GREEN, err=True
+        )
 
 
 @app.command()
@@ -224,9 +234,9 @@ def watch(
             api_key=cfg.openai.api_key, model=cfg.openai.whisper_model
         )
         transcript = transcriber.transcribe(audio_path).text
-        meeting = IntelligenceService(
-            api_key=cfg.openai.api_key, model=cfg.openai.model
-        ).extract(transcript)
+        meeting = IntelligenceService(api_key=cfg.openai.api_key, model=cfg.openai.model).extract(
+            transcript
+        )
 
         rendered = _render(meeting, format)
         out_path = audio_path.with_suffix(audio_path.suffix + suffix)
@@ -249,7 +259,9 @@ def check_config() -> None:
     cfg = Config.from_env()
 
     def row(label: str, ok: bool, hint: str = "") -> None:
-        mark = typer.style("✓", fg=typer.colors.GREEN) if ok else typer.style("✗", fg=typer.colors.RED)
+        mark = (
+            typer.style("✓", fg=typer.colors.GREEN) if ok else typer.style("✗", fg=typer.colors.RED)
+        )
         status = "set" if ok else "missing"
         line = f"  {mark} {label}: {status}"
         if hint:
@@ -258,7 +270,11 @@ def check_config() -> None:
 
     typer.echo("EchoScribe configuration")
     typer.echo("")
-    row("OPENAI_API_KEY", bool(cfg.openai.api_key), f"model={cfg.openai.model}, whisper={cfg.openai.whisper_model}")
+    row(
+        "OPENAI_API_KEY",
+        bool(cfg.openai.api_key),
+        f"model={cfg.openai.model}, whisper={cfg.openai.whisper_model}",
+    )
     row("SLACK_API_TOKEN", bool(cfg.slack.api_token), f"channel={cfg.slack.channel} (optional)")
     typer.echo("")
 

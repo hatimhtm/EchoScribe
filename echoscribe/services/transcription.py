@@ -102,8 +102,7 @@ class TranscriptionService:
             from pydub.silence import split_on_silence
         except ImportError as exc:
             raise ImportError(
-                "pydub is required for large-file chunking. "
-                "Install with: pip install pydub"
+                "pydub is required for large-file chunking. " "Install with: pip install pydub"
             ) from exc
 
         audio = AudioSegment.from_file(audio_path)
