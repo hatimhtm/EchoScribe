@@ -1,6 +1,5 @@
 """Tests for the Whisper-backed transcription service."""
 
-import io
 import wave
 from pathlib import Path
 from unittest.mock import MagicMock

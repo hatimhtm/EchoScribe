@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from echoscribe.config import Config
-from echoscribe.output import to_json, to_markdown, to_slack
+from echoscribe.output import to_markdown, to_slack
 from echoscribe.services.intelligence import IntelligenceService, MeetingIntelligence
 from echoscribe.services.slack import SlackService
 from echoscribe.services.transcription import TranscriptionService

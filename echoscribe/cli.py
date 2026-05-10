@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -58,8 +57,8 @@ def _render(meeting, fmt: str) -> str:
 @app.command()
 def transcribe(
     audio: Path = typer.Argument(..., exists=True, file_okay=True, dir_okay=False, readable=True),
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Write transcript to file."),
-    language: Optional[str] = typer.Option(
+    output: Path | None = typer.Option(None, "--output", "-o", help="Write transcript to file."),
+    language: str | None = typer.Option(
         None, "--language", "-l", help="BCP-47 language hint (auto-detect if omitted)."
     ),
     debug: bool = typer.Option(False, "--debug", help="Verbose logging."),
@@ -90,9 +89,9 @@ def transcribe(
 def intelligence(
     transcript: Path = typer.Argument(..., exists=True, file_okay=True, dir_okay=False, readable=True),
     format: str = typer.Option("markdown", "--format", "-f", help="markdown · slack · json"),
-    output: Optional[Path] = typer.Option(None, "--output", "-o"),
+    output: Path | None = typer.Option(None, "--output", "-o"),
     post_slack: bool = typer.Option(False, "--slack", help="Also post to Slack."),
-    channel: Optional[str] = typer.Option(None, "--channel", "-c"),
+    channel: str | None = typer.Option(None, "--channel", "-c"),
     debug: bool = typer.Option(False, "--debug"),
 ) -> None:
     """Run structured meeting-intelligence extraction on a transcript text file."""
@@ -121,13 +120,13 @@ def intelligence(
 def process(
     audio: Path = typer.Argument(..., exists=True, file_okay=True, dir_okay=False, readable=True),
     format: str = typer.Option("markdown", "--format", "-f"),
-    output: Optional[Path] = typer.Option(None, "--output", "-o"),
-    save_transcript: Optional[Path] = typer.Option(
+    output: Path | None = typer.Option(None, "--output", "-o"),
+    save_transcript: Path | None = typer.Option(
         None, "--save-transcript", help="Also write the raw transcript to this path."
     ),
     post_slack: bool = typer.Option(False, "--slack"),
-    channel: Optional[str] = typer.Option(None, "--channel", "-c"),
-    language: Optional[str] = typer.Option(None, "--language", "-l"),
+    channel: str | None = typer.Option(None, "--channel", "-c"),
+    language: str | None = typer.Option(None, "--language", "-l"),
     debug: bool = typer.Option(False, "--debug"),
 ) -> None:
     """Full pipeline: audio → transcript → structured meeting brief."""
@@ -202,7 +201,7 @@ def watch(
     directory: Path = typer.Argument(..., help="Directory to watch for new audio files."),
     format: str = typer.Option("markdown", "--format", "-f"),
     post_slack: bool = typer.Option(False, "--slack"),
-    channel: Optional[str] = typer.Option(None, "--channel", "-c"),
+    channel: str | None = typer.Option(None, "--channel", "-c"),
     debug: bool = typer.Option(False, "--debug"),
 ) -> None:
     """Watch a directory and process every new audio file that lands in it.
