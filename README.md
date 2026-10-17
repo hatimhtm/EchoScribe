@@ -14,6 +14,10 @@
 </p>
 
 <p align="center">
+  <img src="assets-readme/screenshot.jpg" alt="EchoScribe turning a meeting recording into a summary and action items" width="100%" />
+</p>
+
+<p align="center">
   <em>Audio → Whisper → <strong>structured</strong> meeting intelligence → your tool of choice. Hand it any Zoom / Teams / Loom recording; get back a clean Markdown brief, a Slack-ready post, or a JSON payload with title, summary, decisions, action items (owner + due), participants, sentiment, and open questions. CLI, FastAPI server, or watch-a-directory daemon. One OpenAI key.</em>
 </p>
 
